@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1f2d3d;--mute:#6b7c8f;--line:#e4ebf2;--bg:#f6f9fc;--card:#fff;--a:#5b9bd5;--sky1:#eaf4fd;--sky2:#fdfbf4}
+*{box-sizing:border-box;margin:0}
+body{font-family:Figtree,system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg);min-height:100vh;display:flex;justify-content:center;padding:32px 16px}
+main{width:100%;max-width:440px}
+form{display:flex;gap:8px;margin-bottom:20px}
+input{flex:1;min-width:0;font:inherit;padding:12px 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);outline:none}
+input:focus-visible,button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:0 16px}
+button:hover{border-color:var(--a)}
+.hero{background:linear-gradient(170deg,var(--sky1),var(--sky2));border-radius:28px;padding:32px 28px 28px;transition:background .6s}
+.hero.rain{--sky1:#e6eef6;--sky2:#f3f6fa}.hero.snow{--sky1:#eef3fa;--sky2:#fafcff}
+.hero.storm{--sky1:#e3e6f1;--sky2:#f1f2f8}.hero.cloud{--sky1:#edf2f7;--sky2:#f8fafc}
+.hero.night{--sky1:#e4e9f6;--sky2:#f3f1fa}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h1{font-size:20px;font-weight:500}
+.sub{color:var(--mute);font-size:14px;margin-top:2px}
+.unit{padding:6px 12px;font-size:13px}
+.temp{display:flex;align-items:center;justify-content:space-between;margin:28px 0 20px}
+.temp b{font-size:96px;font-weight:300;line-height:1;letter-spacing:-4px}
+.temp b sup{font-size:32px;letter-spacing:0;font-weight:400;vertical-align:top;position:relative;top:10px;color:var(--mute)}
+.temp svg{width:88px;height:88px}
+.cond{font-size:18px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:24px;padding-top:20px;border-top:1px solid rgba(31,45,61,.08)}
+.stats span{display:block;color:var(--mute);font-size:13px}
+.stats strong{font-weight:500;font-size:17px}
+.days{background:var(--card);border-radius:24px;margin-top:16px;padding:8px 24px}
+.day{display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.day:last-child{border:0}
+.day svg{width:28px;height:28px}
+.day .r{text-align:right;color:var(--mute)}.day .r b{color:var(--ink);font-weight:500}
+.foot{text-align:center;color:var(--mute);font-size:12px;margin-top:16px}
+.msg{padding:48px 0;text-align:center;color:var(--mute)}
+@media(max-width:380px){.temp b{font-size:76px}.temp svg{width:64px;height:64px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<form id="f">
+  <input id="q" type="search" placeholder="Search a city" aria-label="Search a city" autocomplete="off">
+  <button type="button" id="loc" title="Use my location" aria-label="Use my location">Locate</button>
+</form>
+<div id="out"><p class="msg">Loading weather…</p></div>
+<p class="foot" id="foot"></p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let place=null,unit='c',timer=null;
+try{const s=JSON.parse(localStorage.getItem('wx'));if(s){place=s.place;unit=s.unit||'c'}}catch(e){}
+
+const C={ // code -> [label, tone]
+0:['Clear','sun'],1:['Mostly clear','sun'],2:['Partly cloudy','part'],3:['Overcast','cloud'],
+45:['Fog','cloud'],48:['Freezing fog','cloud'],51:['Light drizzle','rain'],53:['Drizzle','rain'],55:['Heavy drizzle','rain'],
+56:['Freezing drizzle','rain'],57:['Freezing drizzle','rain'],61:['Light rain','rain'],63:['Rain','rain'],65:['Heavy rain','rain'],
+66:['Freezing rain','rain'],67:['Freezing rain','rain'],71:['Light snow','snow'],73:['Snow','snow'],75:['Heavy snow','snow'],
+77:['Snow grains','snow'],80:['Showers','rain'],81:['Showers','rain'],82:['Heavy showers','rain'],85:['Snow showers','snow'],
+86:['Snow showers','snow'],95:['Thunderstorm','storm'],96:['Thunderstorm, hail','storm'],99:['Thunderstorm, hail','storm']};
+
+function icon(t,night){
+  const sun='<circle cx="32" cy="32" r="11" fill="#f6c453"/><g stroke="#f6c453" stroke-width="3" stroke-linecap="round"><path d="M32 8v5M32 51v5M8 32h5M51 32h5M15 15l3.5 3.5M45.5 45.5L49 49M15 49l3.5-3.5M45.5 18.5L49 15"/></g>';
+  const moon='<path d="M40 10a22 22 0 1 0 14 34A18 18 0 0 1 40 10z" fill="#b7c3e6"/>';
+  const cloud=(f='#cfdbe8')=>`<path d="M20 46a11 11 0 0 1 1-22 14 14 0 0 1 27 4 9 9 0 0 1-1 18z" fill="${f}"/>`;
+  const drops='<g stroke="#5b9bd5" stroke-width="3" stroke-linecap="round"><path d="M24 52l-2 5M33 52l-2 5M42 52l-2 5"/></g>';
+  const flakes='<g fill="#9cc3e6"><circle cx="24" cy="55" r="2.2"/><circle cx="33" cy="57" r="2.2"/><circle cx="42" cy="55" r="2.2"/></g>';
+  const bolt='<path d="M35 46l-7 11h6l-2 7 9-12h-6z" fill="#f6c453"/>';
+  let g;
+  if(t==='sun')g=night?moon:sun;
+  else if(t==='part')g=(night?'<g transform="translate(-6 -6) scale(.8)">'+moon+'</g>':'<g transform="translate(-8 -8) scale(.8)">'+sun+'</g>')+'<g transform="translate(6 4)">'+cloud('#d6e1ec')+'</g>';
+  else if(t==='cloud')g=cloud();
+  else if(t==='rain')g=cloud('#c3d2e2')+drops;
+  else if(t==='snow')g=cloud('#d8e3ef')+flakes;
+  else g=cloud('#b9c4d8')+bolt;
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${g}</svg>`;
+}
+
+async function geocode(name){
+  const r=await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name='+encodeURIComponent(name));
+  const j=await r.json();
+  if(!j.results||!j.results.length)throw new Error('No city found for “'+name+'”. Check the spelling and try again.');
+  const p=j.results[0];
+  return{name:p.name,sub:[p.admin1,p.country].filter(Boolean).join(', '),lat:p.latitude,lon:p.longitude};
+}
+
+async function load(){
+  clearTimeout(timer);
+  if(!place){return locate(true)}
+  try{
+    const u='https://api.open-meteo.com/v1/forecast?latitude='+place.lat+'&longitude='+place.lon+
+      '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day'+
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=6&timezone=auto'+
+      '&temperature_unit='+(unit==='c'?'celsius':'fahrenheit')+'&wind_speed_unit='+(unit==='c'?'kmh':'mph');
+    const r=await fetch(u);if(!r.ok)throw 0;
+    render(await r.json());
+  }catch(e){
+    $('out').innerHTML='<p class="msg">Couldn’t load the weather. Check your connection — we’ll retry shortly.</p>';
+  }
+  timer=setTimeout(load,600000);
+}
+
+function render(d){
+  const c=d.current,[label,tone]=C[c.weather_code]||['—','cloud'],night=!c.is_day;
+  const hero=night&&tone==='sun'?'night':tone==='part'?'cloud':tone;
+  const T=n=>Math.round(n),wu=unit==='c'?'km/h':'mph';
+  const days=d.daily.time.slice(1).map((t,i)=>{
+    const k=i+1,[l,tn]=C[d.daily.weather_code[k]]||['—','cloud'];
+    const nm=new Date(t+'T12:00').toLocaleDateString(undefined,{weekday:'long'});
+    return `<div class="day"><span>${nm}</span>${icon(tn,false)}<span class="r"><b>${T(d.daily.temperature_2m_max[k])}°</b>  ${T(d.daily.temperature_2m_min[k])}°</span></div>`;
+  }).join('');
+  $('out').innerHTML=`<section class="hero ${hero}">
+    <div class="top"><div><h1>${esc(place.name)}</h1><p class="sub">${esc(place.sub||'')}</p></div>
+    <button class="unit" id="u" aria-label="Switch units">°${unit==='c'?'C':'F'}</button></div>
+    <div class="temp"><b>${T(c.temperature_2m)}<sup>°</sup></b>${icon(tone,night)}</div>
+    <p class="cond">${label}</p>
+    <div class="stats"><div><span>Feels like</span><strong>${T(c.apparent_temperature)}°</strong></div>
+    <div><span>Humidity</span><strong>${c.relative_humidity_2m}%</strong></div>
+    <div><span>Wind</span><strong>${T(c.wind_speed_10m)} ${wu}</strong></div></div></section>
+    <section class="days" aria-label="Forecast">${days}</section>`;
+  $('u').onclick=()=>{unit=unit==='c'?'f':'c';save();load()};
+  $('foot').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+' · Data from Open-Meteo';
+}
+
+function esc(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+function save(){try{localStorage.setItem('wx',JSON.stringify({place,unit}))}catch(e){}}
+function fallback(){return geocode('Guwahati')}
+
+function locate(silent){
+  const done=p=>{place=p;save();load()};
+  if(!navigator.geolocation)return fallback().then(done);
+  navigator.geolocation.getCurrentPosition(
+    p=>done({name:'Your location',sub:'',lat:p.coords.latitude,lon:p.coords.longitude}),
+    ()=>{ if(silent)fallback().then(done); else $('foot').textContent='Location access was blocked. Search for a city instead.'},
+    {timeout:8000});
+}
+
+$('f').onsubmit=async e=>{
+  e.preventDefault();const v=$('q').value.trim();if(!v)return;
+  try{place=await geocode(v);save();$('q').value='';load()}
+  catch(err){$('foot').textContent=err.message||'Search failed. Try again.'}
+};
+$('loc').onclick=()=>locate(false);
+load();
+</script>
+</body>
+</html>
